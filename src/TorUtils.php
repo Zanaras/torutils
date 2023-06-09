@@ -17,7 +17,7 @@ class TorUtils {
 	public $enableSecOpsList = false;
 
 	public function __construct($userAgent) {
-		$options[CURLOPT_USERAGENT] = $userAgent;
+		$this->options[CURLOPT_USERAGENT] = $userAgent;
 	}
 
 	public function fetch($withTime = false) {
@@ -25,7 +25,17 @@ class TorUtils {
 		if ($this->enableOnioo) {
 			$onioo = $this->parseOniooList($all);
 			if ($onioo) {
-				$all = $this->formatList($all, $onioo, $withTime);
+				if ($withTime) {
+					$now = new DateTime('now');
+					foreach ($onioo as $each) {
+						$all[] = ['ip'=>$each,'ts'=>$now];
+					}
+				} else {
+					foreach ($onioo as $each) {
+						$all[] = ['ip'=>$each];
+					}
+				}
+				#$all = $this->formatList($all, $onioo, $withTime);
 			}
 		}
 		if ($this->enableTorExits) {
@@ -70,18 +80,22 @@ class TorUtils {
 			}
 			if (in_array("Exit", $relay['flags'])) {
 				foreach ($relay['or_addresses'] as $ip) {
-					if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-						$cache[] = $ip;
-					} elseif (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
-						$cache[] = $ip;
+					if (strpos($ip, ':') !== false) {
+						// ipv6
+						if(count(explode(':', $ip)) > 2 && strpos($ip, '[') !== false) {
+							$cache[] = parse_url('http://'.$ip, PHP_URL_HOST);
+						} elseif(count(explode(':', $ip)) === 2) {
+							$cache[] = strstr( $ip, ':', true );
+						}
 					}
 				}
 			}
 		}
+		return $cache;
 	}
 
 	public function fetchOniooRelays() {
-		$curl = curl_init("https://onionoo.torproject.org/details");
+		$curl = curl_init("https://onionoo.torproject.org/details?fields=relays,flags,or_addresses,last_seen");
 		curl_setopt_array($curl, $this->options);
 		$response_raw = curl_exec($curl);
 		if ($response_raw) {
