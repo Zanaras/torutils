@@ -1,0 +1,20 @@
+{
+    "name": "kagurati/torutils",
+    "description": "Utility functions for gathering TOR exit node listings.",
+    "license": "Unlicense",
+    "authors": [
+        {
+            "name": "Andrew Gwynn",
+            "email": "andrew@iungard.com"
+        }
+    ],
+    "minimum-stability": "dev",
+    "require": {
+        "php": ">=7"
+    },
+    "autoload": {
+        "psr-4": {
+            "TorUtils\\": "src/"
+        }
+    }
+}
