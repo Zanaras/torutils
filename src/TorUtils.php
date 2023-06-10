@@ -2,7 +2,7 @@
 
 namespace TorUtils;
 
-use Symfony\Component\Validator\Constraints\DateTime;
+use DateTime;
 
 class TorUtils {
 
@@ -15,39 +15,32 @@ class TorUtils {
 	public $enableOnioo = true;
 	public $enableTorExits = false;
 	public $enableSecOpsList = false;
+	public $oniooFields = 'relays,flags,or_addresses,last_seen';
+	public $opts = [];
 
 	public function __construct($userAgent) {
 		$this->options[CURLOPT_USERAGENT] = $userAgent;
 	}
 
-	public function fetch($withTime = false) {
+	public function fetchExits($extra = false) {
 		$all = [];
 		if ($this->enableOnioo) {
-			$onioo = $this->parseOniooList($all);
-			if ($onioo) {
-				if ($withTime) {
-					$now = new DateTime('now');
-					foreach ($onioo as $each) {
-						$all[] = ['ip'=>$each,'ts'=>$now];
-					}
-				} else {
-					foreach ($onioo as $each) {
-						$all[] = ['ip'=>$each];
-					}
-				}
-				#$all = $this->formatList($all, $onioo, $withTime);
+			$all = $this->parseOniooExitsList($all, $extra);
+			if (!$all) {
+				# This just resets the cache array in case parseOniooExitsList returns false from failure condition.
+				$all = [];
 			}
 		}
 		if ($this->enableTorExits) {
 			$torExits = $this->parseTorExitList($all);
 			if ($torExits) {
-				$all = $this->formatList($all, $torExits, $withTime);
+				$all = $this->formatList($all, $torExits, $extra);
 			}
 		}
 		if ($this->enableSecOpsList) {
 			$secOps = $this->parseSecOpsList($all);
 			if ($secOps) {
-				$all = $this->formatList($all, $secOps, $withTime);
+				$all = $this->formatList($all, $secOps, $extra);
 			}
 		}
 		return $all;
@@ -67,35 +60,51 @@ class TorUtils {
 		return $all;
 	}
 
-	public function parseOniooList($cache = []) {
+	public function parseOniooExitsList($cache = [], $extra = false) {
 		$relays = $this->fetchOniooRelays();
 		if (!$relays) {
 			return false;
 		}
 		$now = time();
+		$date = new DateTime('now');
+		$i = 0;
 		foreach ($relays as $relay) {
+			$result = [];
+			$flag = false;
 			if (strtotime($relay['last_seen']) < $now - $this->window) {
 				# Relay was last seen before our search window. Skip.
 				continue;
 			}
 			if (in_array("Exit", $relay['flags'])) {
 				foreach ($relay['or_addresses'] as $ip) {
-					if (strpos($ip, ':') !== false) {
+					$i++;
+					if(count(explode(':', $ip)) > 2 && strpos($ip, '[') !== false) {
 						// ipv6
-						if(count(explode(':', $ip)) > 2 && strpos($ip, '[') !== false) {
-							$cache[] = parse_url('http://'.$ip, PHP_URL_HOST);
-						} elseif(count(explode(':', $ip)) === 2) {
-							$cache[] = strstr( $ip, ':', true );
-						}
+						$ip = parse_url('http://'.$ip, PHP_URL_HOST);
+						$ip = rtrim(ltrim($ip, '['), ']');
+						$result['ip'] = $ip;
+						$flag = true;
+					} elseif(count(explode(':', $ip)) === 2) {
+						// ipv4
+						$result['ip'] = strstr( $ip, ':', true );
+						$flag = true;
+					}
+					if ($extra) {
+						// any extra data.
+						$result['last_seen'] = $relay['last_seen'];
+						$result['ts'] = $date;
 					}
 				}
+			}
+			if ($flag) {
+				$cache[] = $result;
 			}
 		}
 		return $cache;
 	}
 
 	public function fetchOniooRelays() {
-		$curl = curl_init("https://onionoo.torproject.org/details?fields=relays,flags,or_addresses,last_seen");
+		$curl = curl_init("https://onionoo.torproject.org/details?fields=".$this->oniooFields);
 		curl_setopt_array($curl, $this->options);
 		$response_raw = curl_exec($curl);
 		if ($response_raw) {
