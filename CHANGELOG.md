@@ -1,3 +1,6 @@
+## v0.1.2
+* Added `ext-json` as dependency.
+
 ## v0.1.1
 * Onioo exits fetch is now functional
 * Renamed fetch function to fetchExits
