@@ -10,7 +10,8 @@
     ],
     "minimum-stability": "dev",
     "require": {
-        "php": ">=7"
+        "php": ">=7",
+        "ext-curl": "*"
     },
     "autoload": {
         "psr-4": {
