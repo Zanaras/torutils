@@ -6,16 +6,16 @@ use DateTime;
 
 class TorUtils {
 
-	public $options = [
+	public $curlOptions = [
 		CURLOPT_RETURNTRANSFER => true,
 		CURLOPT_CONNECTTIMEOUT => 10,
 	];
 
 	public $window = 21600;
-	public $enableOnioo = true;
-	public $enableTorExits = false;
+	public $enableOnionoo = true;
+	public $enableTorExits = true;
 	public $enableSecOpsList = false;
-	public $oniooFields = 'relays,flags,or_addresses,last_seen';
+	public $onionooFields = 'relays,flags,or_addresses,last_seen';
 	public $opts = [];
 
 	public function __construct($userAgent) {
@@ -24,25 +24,22 @@ class TorUtils {
 
 	public function fetchExits($extra = false) {
 		$all = [];
-		if ($this->enableOnioo) {
-			$all = $this->parseOniooExitsList($all, $extra);
+		if ($this->enableOnionoo) {
+			$all = $this->parseOnionooExitsList($all, $extra);
 			if (!$all) {
 				# This just resets the cache array in case parseOniooExitsList returns false from failure condition.
 				$all = [];
 			}
 		}
 		if ($this->enableTorExits) {
-			$torExits = $this->parseTorExitList($all);
-			if ($torExits) {
-				$all = $this->formatList($all, $torExits, $extra);
-			}
+			$all = $this->parseTorExitList($all, $extra);
 		}
-		if ($this->enableSecOpsList) {
-			$secOps = $this->parseSecOpsList($all);
-			if ($secOps) {
-				$all = $this->formatList($all, $secOps, $extra);
-			}
-		}
+		#if ($this->enableSecOpsList) {
+		#	$secOps = $this->parseSecOpsList($all);
+		#	if ($secOps) {
+		#		$all = $this->formatList($all, $secOps, $extra);
+		#	}
+		#}
 		return $all;
 	}
 
@@ -60,8 +57,8 @@ class TorUtils {
 		return $all;
 	}
 
-	public function parseOniooExitsList($cache = [], $extra = false) {
-		$relays = $this->fetchOniooRelays();
+	public function parseOnionooExitsList($cache = [], $extra = false) {
+		$relays = $this->fetchOnionooRelays();
 		if (!$relays) {
 			return false;
 		}
@@ -103,9 +100,9 @@ class TorUtils {
 		return $cache;
 	}
 
-	public function fetchOniooRelays() {
-		$curl = curl_init("https://onionoo.torproject.org/details?fields=".$this->oniooFields);
-		curl_setopt_array($curl, $this->options);
+	public function fetchOnionooRelays() {
+		$curl = curl_init("https://onionoo.torproject.org/details?fields=".$this->onionooFields);
+		curl_setopt_array($curl, $this->curlOptions);
 		$response_raw = curl_exec($curl);
 		if ($response_raw) {
 			$response = json_decode($response_raw, true);
@@ -115,18 +112,23 @@ class TorUtils {
 		}
 	}
 
-	public function parseTorExitList($cache = []) {
+	public function parseTorExitList($cache = [], $extra = false) {
 		$file = file_get_contents("https://check.torproject.org/exit-addresses");
 		if ($file) {
+			$skip = 0;
+			$now = new DateTime('now');
 			$lines = preg_split('/\r\n|\r|\n/', $file);
 			foreach ($lines as $line) {
+				$result = [];
+				$flag = false;
 				if ($skip > 0) {
 					$skip--;
 					continue;
 				}
 				if (substr($line, 0, 10) === 'LastStatus') {
 					$date = explode(" ", $line);
-					$when = new DateTime($date[1].' '.$date[2]);
+					$fullDate = $date[1].' '.$date[2];
+					$when = new DateTime($fullDate);
 					$limit = new DateTime("-".$this->window." seconds");
 					if ($when < $limit) {
 						$skip = 2;
@@ -136,8 +138,16 @@ class TorUtils {
 				if (substr($line, 0, 11) === 'ExitAddress') {
 					$ip = explode(" ", $line)[1];
 					if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE) && !in_array($ip, $cache)) {
-						$cache[] = $ip;
+						$flag = true;
 					}
+				}
+				if ($flag) {
+					$result['ip'] = $ip;
+					if ($extra) {
+						$result['last_seen'] = $fullDate;
+						$result['ts']=$now;
+					}
+					$cache[] = $result;
 				}
 			}
 			return $cache;
